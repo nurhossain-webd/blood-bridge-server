@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
-import { MongoClient, ServerApiVersion } from "mongodb";
+import { MongoClient, ServerApiVersion, ObjectId } from "mongodb";
 
 dotenv.config();
 
@@ -45,6 +45,8 @@ async function run() {
 
     const db = client.db("bloodBridgeDB");
     const usersCollection = db.collection("users");
+    const donationRequestsCollection = db.collection("donationRequests");
+    const fundsCollection = db.collection("funds");
 
     app.get("/", (req, res) => {
       res.send("BloodBridge server is running");
@@ -55,6 +57,7 @@ async function run() {
       res.send({ message: "MongoDB connected successfully", result });
     });
 
+    // users APIs
     app.get("/users", async (req, res) => {
       const users = await usersCollection.find().toArray();
       res.send(users);
@@ -110,6 +113,77 @@ async function run() {
       };
 
       const result = await usersCollection.updateOne({ email }, updateDoc);
+      res.send(result);
+    });
+
+    // donation request APIs
+    app.post("/donation-requests", async (req, res) => {
+      const requestData = req.body;
+
+      const requester = await usersCollection.findOne({
+        email: requestData.requesterEmail,
+      });
+
+      if (!requester) {
+        return res.status(404).send({ message: "Requester not found" });
+      }
+
+      if (requester.status === "blocked") {
+        return res.status(403).send({
+          message: "Blocked user cannot create donation request",
+        });
+      }
+
+      const newRequest = {
+        requesterName: requestData.requesterName,
+        requesterEmail: requestData.requesterEmail,
+        recipientName: requestData.recipientName,
+        recipientDistrict: requestData.recipientDistrict,
+        recipientUpazila: requestData.recipientUpazila,
+        hospitalName: requestData.hospitalName,
+        fullAddress: requestData.fullAddress,
+        bloodGroup: requestData.bloodGroup,
+        donationDate: requestData.donationDate,
+        donationTime: requestData.donationTime,
+        requestMessage: requestData.requestMessage,
+        donationStatus: "pending",
+        donorName: "",
+        donorEmail: "",
+        createdAt: new Date(),
+      };
+
+      const result = await donationRequestsCollection.insertOne(newRequest);
+      res.send(result);
+    });
+
+    app.get("/donation-requests", async (req, res) => {
+      const email = req.query.email;
+      const status = req.query.status;
+
+      const query = {};
+
+      if (email) {
+        query.requesterEmail = email;
+      }
+
+      if (status) {
+        query.donationStatus = status;
+      }
+
+      const result = await donationRequestsCollection
+        .find(query)
+        .sort({ createdAt: -1 })
+        .toArray();
+
+      res.send(result);
+    });
+
+    app.get("/donation-requests/:id", async (req, res) => {
+      const id = req.params.id;
+      const result = await donationRequestsCollection.findOne({
+        _id: new ObjectId(id),
+      });
+
       res.send(result);
     });
 
