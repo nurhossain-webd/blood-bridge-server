@@ -51,16 +51,6 @@ async function run() {
       res.send("BloodBridge server is running");
     });
 
-    app.get("/health", async (req, res) => {
-      const result = await client.db("admin").command({ ping: 1 });
-      res.send({ message: "MongoDB connected successfully", result });
-    });
-
-    app.get("/users", async (req, res) => {
-      const users = await usersCollection.find().toArray();
-      res.send(users);
-    });
-
     app.get("/users/:email", async (req, res) => {
       const user = await usersCollection.findOne({ email: req.params.email });
       res.send(user);
@@ -173,11 +163,10 @@ async function run() {
     });
 
     app.patch("/donation-requests/:id", async (req, res) => {
-      const id = req.params.id;
       const updatedData = req.body;
 
       const result = await donationRequestsCollection.updateOne(
-        { _id: new ObjectId(id) },
+        { _id: new ObjectId(req.params.id) },
         {
           $set: {
             recipientName: updatedData.recipientName,
@@ -189,6 +178,38 @@ async function run() {
             donationDate: updatedData.donationDate,
             donationTime: updatedData.donationTime,
             requestMessage: updatedData.requestMessage,
+            updatedAt: new Date(),
+          },
+        }
+      );
+
+      res.send(result);
+    });
+
+    app.patch("/donation-requests/donate/:id", async (req, res) => {
+      const { donorName, donorEmail } = req.body;
+
+      const request = await donationRequestsCollection.findOne({
+        _id: new ObjectId(req.params.id),
+      });
+
+      if (!request) {
+        return res.status(404).send({ message: "Donation request not found" });
+      }
+
+      if (request.donationStatus !== "pending") {
+        return res.status(400).send({
+          message: "This request is not available for donation",
+        });
+      }
+
+      const result = await donationRequestsCollection.updateOne(
+        { _id: new ObjectId(req.params.id) },
+        {
+          $set: {
+            donationStatus: "inprogress",
+            donorName,
+            donorEmail,
             updatedAt: new Date(),
           },
         }
