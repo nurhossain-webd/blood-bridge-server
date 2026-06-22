@@ -17,7 +17,7 @@ const allowedOrigins = [
 
 app.use(
   cors({
-    origin: function (origin, callback) {
+    origin(origin, callback) {
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
@@ -46,7 +46,6 @@ async function run() {
     const db = client.db("bloodBridgeDB");
     const usersCollection = db.collection("users");
     const donationRequestsCollection = db.collection("donationRequests");
-    const fundsCollection = db.collection("funds");
 
     app.get("/", (req, res) => {
       res.send("BloodBridge server is running");
@@ -57,28 +56,22 @@ async function run() {
       res.send({ message: "MongoDB connected successfully", result });
     });
 
-    // users APIs
     app.get("/users", async (req, res) => {
       const users = await usersCollection.find().toArray();
       res.send(users);
     });
 
     app.get("/users/:email", async (req, res) => {
-      const email = req.params.email;
-      const user = await usersCollection.findOne({ email });
+      const user = await usersCollection.findOne({ email: req.params.email });
       res.send(user);
     });
 
     app.post("/users", async (req, res) => {
       const user = req.body;
-
       const existingUser = await usersCollection.findOne({ email: user.email });
 
       if (existingUser) {
-        return res.send({
-          message: "User already exists",
-          insertedId: null,
-        });
+        return res.send({ message: "User already exists", insertedId: null });
       }
 
       const newUser = {
@@ -98,25 +91,25 @@ async function run() {
     });
 
     app.patch("/users/:email", async (req, res) => {
-      const email = req.params.email;
       const updatedData = req.body;
 
-      const updateDoc = {
-        $set: {
-          name: updatedData.name,
-          avatar: updatedData.avatar,
-          bloodGroup: updatedData.bloodGroup,
-          district: updatedData.district,
-          upazila: updatedData.upazila,
-          updatedAt: new Date(),
-        },
-      };
+      const result = await usersCollection.updateOne(
+        { email: req.params.email },
+        {
+          $set: {
+            name: updatedData.name,
+            avatar: updatedData.avatar,
+            bloodGroup: updatedData.bloodGroup,
+            district: updatedData.district,
+            upazila: updatedData.upazila,
+            updatedAt: new Date(),
+          },
+        }
+      );
 
-      const result = await usersCollection.updateOne({ email }, updateDoc);
       res.send(result);
     });
 
-    // donation request APIs
     app.post("/donation-requests", async (req, res) => {
       const requestData = req.body;
 
@@ -157,18 +150,11 @@ async function run() {
     });
 
     app.get("/donation-requests", async (req, res) => {
-      const email = req.query.email;
-      const status = req.query.status;
-
+      const { email, status } = req.query;
       const query = {};
 
-      if (email) {
-        query.requesterEmail = email;
-      }
-
-      if (status) {
-        query.donationStatus = status;
-      }
+      if (email) query.requesterEmail = email;
+      if (status) query.donationStatus = status;
 
       const result = await donationRequestsCollection
         .find(query)
@@ -179,10 +165,58 @@ async function run() {
     });
 
     app.get("/donation-requests/:id", async (req, res) => {
-      const id = req.params.id;
       const result = await donationRequestsCollection.findOne({
-        _id: new ObjectId(id),
+        _id: new ObjectId(req.params.id),
       });
+
+      res.send(result);
+    });
+
+    app.patch("/donation-requests/:id", async (req, res) => {
+      const id = req.params.id;
+      const updatedData = req.body;
+
+      const result = await donationRequestsCollection.updateOne(
+        { _id: new ObjectId(id) },
+        {
+          $set: {
+            recipientName: updatedData.recipientName,
+            recipientDistrict: updatedData.recipientDistrict,
+            recipientUpazila: updatedData.recipientUpazila,
+            hospitalName: updatedData.hospitalName,
+            fullAddress: updatedData.fullAddress,
+            bloodGroup: updatedData.bloodGroup,
+            donationDate: updatedData.donationDate,
+            donationTime: updatedData.donationTime,
+            requestMessage: updatedData.requestMessage,
+            updatedAt: new Date(),
+          },
+        }
+      );
+
+      res.send(result);
+    });
+
+    app.delete("/donation-requests/:id", async (req, res) => {
+      const result = await donationRequestsCollection.deleteOne({
+        _id: new ObjectId(req.params.id),
+      });
+
+      res.send(result);
+    });
+
+    app.patch("/donation-requests/status/:id", async (req, res) => {
+      const { status } = req.body;
+
+      const result = await donationRequestsCollection.updateOne(
+        { _id: new ObjectId(req.params.id) },
+        {
+          $set: {
+            donationStatus: status,
+            updatedAt: new Date(),
+          },
+        }
+      );
 
       res.send(result);
     });
