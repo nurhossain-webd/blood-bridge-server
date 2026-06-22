@@ -7,11 +7,23 @@ import { MongoClient, ServerApiVersion } from "mongodb";
 dotenv.config();
 
 const app = express();
-const port = process.env.PORT || 5000;
+const port = process.env.PORT || 5001;
+
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  process.env.CLIENT_URL,
+];
 
 app.use(
   cors({
-    origin: [process.env.CLIENT_URL],
+    origin: function (origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
     credentials: true,
   })
 );
@@ -33,8 +45,6 @@ async function run() {
 
     const db = client.db("bloodBridgeDB");
     const usersCollection = db.collection("users");
-    const donationRequestsCollection = db.collection("donationRequests");
-    const fundsCollection = db.collection("funds");
 
     app.get("/", (req, res) => {
       res.send("BloodBridge server is running");
@@ -42,11 +52,7 @@ async function run() {
 
     app.get("/health", async (req, res) => {
       const result = await client.db("admin").command({ ping: 1 });
-
-      res.send({
-        message: "MongoDB connected successfully",
-        result,
-      });
+      res.send({ message: "MongoDB connected successfully", result });
     });
 
     app.get("/users", async (req, res) => {
@@ -54,12 +60,16 @@ async function run() {
       res.send(users);
     });
 
+    app.get("/users/:email", async (req, res) => {
+      const email = req.params.email;
+      const user = await usersCollection.findOne({ email });
+      res.send(user);
+    });
+
     app.post("/users", async (req, res) => {
       const user = req.body;
 
-      const existingUser = await usersCollection.findOne({
-        email: user.email,
-      });
+      const existingUser = await usersCollection.findOne({ email: user.email });
 
       if (existingUser) {
         return res.send({
@@ -84,31 +94,22 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/add-test-user", async (req, res) => {
-      const testUser = {
-        name: "Test User",
-        email: "test@gmail.com",
-        avatar: "https://i.ibb.co/test.png",
-        bloodGroup: "A+",
-        district: "Dhaka",
-        upazila: "Dhanmondi",
-        role: "donor",
-        status: "active",
-        createdAt: new Date(),
+    app.patch("/users/:email", async (req, res) => {
+      const email = req.params.email;
+      const updatedData = req.body;
+
+      const updateDoc = {
+        $set: {
+          name: updatedData.name,
+          avatar: updatedData.avatar,
+          bloodGroup: updatedData.bloodGroup,
+          district: updatedData.district,
+          upazila: updatedData.upazila,
+          updatedAt: new Date(),
+        },
       };
 
-      const existingUser = await usersCollection.findOne({
-        email: testUser.email,
-      });
-
-      if (existingUser) {
-        return res.send({
-          message: "Test user already exists",
-          user: existingUser,
-        });
-      }
-
-      const result = await usersCollection.insertOne(testUser);
+      const result = await usersCollection.updateOne({ email }, updateDoc);
       res.send(result);
     });
 
