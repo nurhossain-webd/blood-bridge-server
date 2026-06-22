@@ -9,7 +9,6 @@ dotenv.config();
 const app = express();
 const port = process.env.PORT || 5000;
 
-// middleware
 app.use(
   cors({
     origin: [process.env.CLIENT_URL],
@@ -20,7 +19,6 @@ app.use(
 app.use(express.json());
 app.use(cookieParser());
 
-// MongoDB client
 const client = new MongoClient(process.env.MONGODB_URI, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -34,7 +32,6 @@ async function run() {
     await client.connect();
 
     const db = client.db("bloodBridgeDB");
-
     const usersCollection = db.collection("users");
     const donationRequestsCollection = db.collection("donationRequests");
     const fundsCollection = db.collection("funds");
@@ -50,6 +47,69 @@ async function run() {
         message: "MongoDB connected successfully",
         result,
       });
+    });
+
+    app.get("/users", async (req, res) => {
+      const users = await usersCollection.find().toArray();
+      res.send(users);
+    });
+
+    app.post("/users", async (req, res) => {
+      const user = req.body;
+
+      const existingUser = await usersCollection.findOne({
+        email: user.email,
+      });
+
+      if (existingUser) {
+        return res.send({
+          message: "User already exists",
+          insertedId: null,
+        });
+      }
+
+      const newUser = {
+        name: user.name,
+        email: user.email,
+        avatar: user.avatar,
+        bloodGroup: user.bloodGroup,
+        district: user.district,
+        upazila: user.upazila,
+        role: "donor",
+        status: "active",
+        createdAt: new Date(),
+      };
+
+      const result = await usersCollection.insertOne(newUser);
+      res.send(result);
+    });
+
+    app.get("/add-test-user", async (req, res) => {
+      const testUser = {
+        name: "Test User",
+        email: "test@gmail.com",
+        avatar: "https://i.ibb.co/test.png",
+        bloodGroup: "A+",
+        district: "Dhaka",
+        upazila: "Dhanmondi",
+        role: "donor",
+        status: "active",
+        createdAt: new Date(),
+      };
+
+      const existingUser = await usersCollection.findOne({
+        email: testUser.email,
+      });
+
+      if (existingUser) {
+        return res.send({
+          message: "Test user already exists",
+          user: existingUser,
+        });
+      }
+
+      const result = await usersCollection.insertOne(testUser);
+      res.send(result);
     });
 
     console.log("MongoDB connected successfully");
