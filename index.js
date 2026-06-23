@@ -79,6 +79,33 @@ async function run() {
       res.send(users);
     });
 
+    app.get("/donors/search", async (req, res) => {
+  const { bloodGroup, district, upazila } = req.query;
+
+  const query = {
+    role: "donor",
+    status: "active",
+  };
+
+  if (bloodGroup) query.bloodGroup = bloodGroup;
+  if (district) query.district = district;
+  if (upazila) query.upazila = upazila;
+
+  const donors = await usersCollection
+    .find(query)
+    .project({
+      name: 1,
+      email: 1,
+      avatar: 1,
+      bloodGroup: 1,
+      district: 1,
+      upazila: 1,
+    })
+    .toArray();
+
+  res.send(donors);
+});
+
     app.get("/users/:email", async (req, res) => {
       const user = await usersCollection.findOne({ email: req.params.email });
       res.send(user);
