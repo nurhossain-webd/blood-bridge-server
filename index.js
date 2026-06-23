@@ -46,68 +46,43 @@ async function run() {
     const db = client.db("bloodBridgeDB");
     const usersCollection = db.collection("users");
     const donationRequestsCollection = db.collection("donationRequests");
+    const fundsCollection = db.collection("funds");
 
     app.get("/", (req, res) => {
       res.send("BloodBridge server is running");
+    });
+
+    app.get("/dashboard-stats", async (req, res) => {
+      const totalUsers = await usersCollection.countDocuments();
+      const totalDonationRequests =
+        await donationRequestsCollection.countDocuments();
+
+      const funds = await fundsCollection.find().toArray();
+      const totalFunding = funds.reduce(
+        (sum, fund) => sum + Number(fund.amount || 0),
+        0
+      );
+
+      res.send({
+        totalUsers,
+        totalDonationRequests,
+        totalFunding,
+      });
+    });
+
+    app.get("/users", async (req, res) => {
+      const users = await usersCollection
+        .find()
+        .sort({ createdAt: -1 })
+        .toArray();
+
+      res.send(users);
     });
 
     app.get("/users/:email", async (req, res) => {
       const user = await usersCollection.findOne({ email: req.params.email });
       res.send(user);
     });
-    app.get("/users", async (req, res) => {
-  const users = await usersCollection
-    .find()
-    .sort({ createdAt: -1 })
-    .toArray();
-
-  res.send(users);
-});
-
-app.patch("/users/role/:id", async (req, res) => {
-  const { role } = req.body;
-
-  const result = await usersCollection.updateOne(
-    { _id: new ObjectId(req.params.id) },
-    {
-      $set: {
-        role,
-        updatedAt: new Date(),
-      },
-    }
-  );
-
-  res.send(result);
-});
-
-app.patch("/users/status/:id", async (req, res) => {
-  const { status } = req.body;
-
-  const result = await usersCollection.updateOne(
-    { _id: new ObjectId(req.params.id) },
-    {
-      $set: {
-        status,
-        updatedAt: new Date(),
-      },
-    }
-  );
-
-  res.send(result);
-});
-
-app.get("/make-admin/:email", async (req, res) => {
-  const result = await usersCollection.updateOne(
-    { email: req.params.email },
-    {
-      $set: {
-        role: "admin",
-      },
-    }
-  );
-
-  res.send(result);
-});
 
     app.post("/users", async (req, res) => {
       const user = req.body;
@@ -153,6 +128,28 @@ app.get("/make-admin/:email", async (req, res) => {
       res.send(result);
     });
 
+    app.patch("/users/role/:id", async (req, res) => {
+      const { role } = req.body;
+
+      const result = await usersCollection.updateOne(
+        { _id: new ObjectId(req.params.id) },
+        { $set: { role, updatedAt: new Date() } }
+      );
+
+      res.send(result);
+    });
+
+    app.patch("/users/status/:id", async (req, res) => {
+      const { status } = req.body;
+
+      const result = await usersCollection.updateOne(
+        { _id: new ObjectId(req.params.id) },
+        { $set: { status, updatedAt: new Date() } }
+      );
+
+      res.send(result);
+    });
+
     app.post("/donation-requests", async (req, res) => {
       const requestData = req.body;
 
@@ -193,17 +190,21 @@ app.get("/make-admin/:email", async (req, res) => {
     });
 
     app.get("/donation-requests", async (req, res) => {
-      const { email, status } = req.query;
+      const { email, status, limit } = req.query;
       const query = {};
 
       if (email) query.requesterEmail = email;
       if (status) query.donationStatus = status;
 
-      const result = await donationRequestsCollection
+      let cursor = donationRequestsCollection
         .find(query)
-        .sort({ createdAt: -1 })
-        .toArray();
+        .sort({ createdAt: -1 });
 
+      if (limit) {
+        cursor = cursor.limit(Number(limit));
+      }
+
+      const result = await cursor.toArray();
       res.send(result);
     });
 
