@@ -55,6 +55,59 @@ async function run() {
       const user = await usersCollection.findOne({ email: req.params.email });
       res.send(user);
     });
+    app.get("/users", async (req, res) => {
+  const users = await usersCollection
+    .find()
+    .sort({ createdAt: -1 })
+    .toArray();
+
+  res.send(users);
+});
+
+app.patch("/users/role/:id", async (req, res) => {
+  const { role } = req.body;
+
+  const result = await usersCollection.updateOne(
+    { _id: new ObjectId(req.params.id) },
+    {
+      $set: {
+        role,
+        updatedAt: new Date(),
+      },
+    }
+  );
+
+  res.send(result);
+});
+
+app.patch("/users/status/:id", async (req, res) => {
+  const { status } = req.body;
+
+  const result = await usersCollection.updateOne(
+    { _id: new ObjectId(req.params.id) },
+    {
+      $set: {
+        status,
+        updatedAt: new Date(),
+      },
+    }
+  );
+
+  res.send(result);
+});
+
+app.get("/make-admin/:email", async (req, res) => {
+  const result = await usersCollection.updateOne(
+    { email: req.params.email },
+    {
+      $set: {
+        role: "admin",
+      },
+    }
+  );
+
+  res.send(result);
+});
 
     app.post("/users", async (req, res) => {
       const user = req.body;
