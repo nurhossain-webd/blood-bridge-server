@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
+import jwt from "jsonwebtoken";
 import { MongoClient, ServerApiVersion, ObjectId } from "mongodb";
 
 dotenv.config();
@@ -13,7 +14,7 @@ const allowedOrigins = [
   "http://localhost:3000",
   "http://127.0.0.1:3000",
   process.env.CLIENT_URL,
-];
+].filter(Boolean);
 
 app.use(
   cors({
@@ -30,6 +31,35 @@ app.use(
 
 app.use(express.json());
 app.use(cookieParser());
+
+const createJwtToken = (user) => {
+  return jwt.sign(
+    {
+      email: user.email,
+      role: user.role,
+      status: user.status,
+    },
+    process.env.JWT_SECRET,
+    { expiresIn: "7d" }
+  );
+};
+
+const verifyToken = (req, res, next) => {
+  const token = req.cookies?.access_token;
+
+  if (!token) {
+    return res.status(401).send({ message: "Unauthorized access" });
+  }
+
+  jwt.verify(token, process.env.JWT_SECRET, (error, decoded) => {
+    if (error) {
+      return res.status(401).send({ message: "Invalid or expired token" });
+    }
+
+    req.user = decoded;
+    next();
+  });
+};
 
 const client = new MongoClient(process.env.MONGODB_URI, {
   serverApi: {
@@ -52,7 +82,38 @@ async function run() {
       res.send("BloodBridge server is running");
     });
 
-    app.get("/dashboard-stats", async (req, res) => {
+    app.post("/jwt", async (req, res) => {
+      const { email } = req.body;
+
+      const user = await usersCollection.findOne({ email });
+
+      if (!user) {
+        return res.status(404).send({ message: "User not found" });
+      }
+
+      const token = createJwtToken(user);
+
+      res
+        .cookie("access_token", token, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+          maxAge: 7 * 24 * 60 * 60 * 1000,
+        })
+        .send({ success: true });
+    });
+
+    app.post("/logout", (req, res) => {
+      res
+        .clearCookie("access_token", {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+        })
+        .send({ success: true });
+    });
+
+    app.get("/dashboard-stats", verifyToken, async (req, res) => {
       const totalUsers = await usersCollection.countDocuments();
       const totalDonationRequests =
         await donationRequestsCollection.countDocuments();
@@ -70,7 +131,7 @@ async function run() {
       });
     });
 
-    app.get("/users", async (req, res) => {
+    app.get("/users", verifyToken, async (req, res) => {
       const users = await usersCollection
         .find()
         .sort({ createdAt: -1 })
@@ -80,34 +141,40 @@ async function run() {
     });
 
     app.get("/donors/search", async (req, res) => {
-  const { bloodGroup, district, upazila } = req.query;
+      const { bloodGroup, district, upazila } = req.query;
 
-  const query = {
-    role: "donor",
-    status: "active",
-  };
+      const query = {
+        role: "donor",
+        status: "active",
+      };
 
-  if (bloodGroup) query.bloodGroup = bloodGroup;
-  if (district) query.district = district;
-  if (upazila) query.upazila = upazila;
+      if (bloodGroup) query.bloodGroup = bloodGroup;
+      if (district) query.district = district;
+      if (upazila) query.upazila = upazila;
 
-  const donors = await usersCollection
-    .find(query)
-    .project({
-      name: 1,
-      email: 1,
-      avatar: 1,
-      bloodGroup: 1,
-      district: 1,
-      upazila: 1,
-    })
-    .toArray();
+      const donors = await usersCollection
+        .find(query)
+        .project({
+          name: 1,
+          email: 1,
+          avatar: 1,
+          bloodGroup: 1,
+          district: 1,
+          upazila: 1,
+        })
+        .toArray();
 
-  res.send(donors);
-});
+      res.send(donors);
+    });
 
-    app.get("/users/:email", async (req, res) => {
-      const user = await usersCollection.findOne({ email: req.params.email });
+    app.get("/users/:email", verifyToken, async (req, res) => {
+      const email = req.params.email;
+
+      if (req.user.email !== email && req.user.role !== "admin") {
+        return res.status(403).send({ message: "Forbidden access" });
+      }
+
+      const user = await usersCollection.findOne({ email });
       res.send(user);
     });
 
@@ -135,11 +202,17 @@ async function run() {
       res.send(result);
     });
 
-    app.patch("/users/:email", async (req, res) => {
+    app.patch("/users/:email", verifyToken, async (req, res) => {
+      const email = req.params.email;
+
+      if (req.user.email !== email && req.user.role !== "admin") {
+        return res.status(403).send({ message: "Forbidden access" });
+      }
+
       const updatedData = req.body;
 
       const result = await usersCollection.updateOne(
-        { email: req.params.email },
+        { email },
         {
           $set: {
             name: updatedData.name,
@@ -155,7 +228,11 @@ async function run() {
       res.send(result);
     });
 
-    app.patch("/users/role/:id", async (req, res) => {
+    app.patch("/users/role/:id", verifyToken, async (req, res) => {
+      if (req.user.role !== "admin") {
+        return res.status(403).send({ message: "Admin only access" });
+      }
+
       const { role } = req.body;
 
       const result = await usersCollection.updateOne(
@@ -166,7 +243,11 @@ async function run() {
       res.send(result);
     });
 
-    app.patch("/users/status/:id", async (req, res) => {
+    app.patch("/users/status/:id", verifyToken, async (req, res) => {
+      if (req.user.role !== "admin") {
+        return res.status(403).send({ message: "Admin only access" });
+      }
+
       const { status } = req.body;
 
       const result = await usersCollection.updateOne(
@@ -177,8 +258,12 @@ async function run() {
       res.send(result);
     });
 
-    app.post("/donation-requests", async (req, res) => {
+    app.post("/donation-requests", verifyToken, async (req, res) => {
       const requestData = req.body;
+
+      if (req.user.email !== requestData.requesterEmail) {
+        return res.status(403).send({ message: "Forbidden access" });
+      }
 
       const requester = await usersCollection.findOne({
         email: requestData.requesterEmail,
@@ -243,7 +328,22 @@ async function run() {
       res.send(result);
     });
 
-    app.patch("/donation-requests/:id", async (req, res) => {
+    app.patch("/donation-requests/:id", verifyToken, async (req, res) => {
+      const request = await donationRequestsCollection.findOne({
+        _id: new ObjectId(req.params.id),
+      });
+
+      if (!request) {
+        return res.status(404).send({ message: "Donation request not found" });
+      }
+
+      if (
+        req.user.role !== "admin" &&
+        req.user.email !== request.requesterEmail
+      ) {
+        return res.status(403).send({ message: "Forbidden access" });
+      }
+
       const updatedData = req.body;
 
       const result = await donationRequestsCollection.updateOne(
@@ -267,8 +367,12 @@ async function run() {
       res.send(result);
     });
 
-    app.patch("/donation-requests/donate/:id", async (req, res) => {
+    app.patch("/donation-requests/donate/:id", verifyToken, async (req, res) => {
       const { donorName, donorEmail } = req.body;
+
+      if (req.user.email !== donorEmail) {
+        return res.status(403).send({ message: "Forbidden access" });
+      }
 
       const request = await donationRequestsCollection.findOne({
         _id: new ObjectId(req.params.id),
@@ -299,7 +403,22 @@ async function run() {
       res.send(result);
     });
 
-    app.delete("/donation-requests/:id", async (req, res) => {
+    app.delete("/donation-requests/:id", verifyToken, async (req, res) => {
+      const request = await donationRequestsCollection.findOne({
+        _id: new ObjectId(req.params.id),
+      });
+
+      if (!request) {
+        return res.status(404).send({ message: "Donation request not found" });
+      }
+
+      if (
+        req.user.role !== "admin" &&
+        req.user.email !== request.requesterEmail
+      ) {
+        return res.status(403).send({ message: "Forbidden access" });
+      }
+
       const result = await donationRequestsCollection.deleteOne({
         _id: new ObjectId(req.params.id),
       });
@@ -307,8 +426,25 @@ async function run() {
       res.send(result);
     });
 
-    app.patch("/donation-requests/status/:id", async (req, res) => {
+    app.patch("/donation-requests/status/:id", verifyToken, async (req, res) => {
       const { status } = req.body;
+
+      const request = await donationRequestsCollection.findOne({
+        _id: new ObjectId(req.params.id),
+      });
+
+      if (!request) {
+        return res.status(404).send({ message: "Donation request not found" });
+      }
+
+      const allowed =
+        req.user.role === "admin" ||
+        req.user.role === "volunteer" ||
+        req.user.email === request.requesterEmail;
+
+      if (!allowed) {
+        return res.status(403).send({ message: "Forbidden access" });
+      }
 
       const result = await donationRequestsCollection.updateOne(
         { _id: new ObjectId(req.params.id) },
