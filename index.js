@@ -61,6 +61,21 @@ const verifyToken = (req, res, next) => {
   });
 };
 
+const cookieOptions = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+  path: "/",
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+};
+
+const clearCookieOptions = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+  path: "/",
+};
+
 const client = new MongoClient(process.env.MONGODB_URI, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -112,29 +127,17 @@ app.post("/jwt", async (req, res) => {
 
   const token = createJwtToken(user);
 
-  res
-    .cookie("access_token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    })
-    .send({ success: true });
+  res.cookie("access_token", token, cookieOptions).send({ success: true });
 });
 
 app.post("/logout", (req, res) => {
-  res
-    .clearCookie("access_token", {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-    })
-    .send({ success: true });
+  res.clearCookie("access_token", clearCookieOptions).send({ success: true });
 });
 
 app.get("/dashboard-stats", verifyToken, async (req, res) => {
   const totalUsers = await usersCollection.countDocuments();
-  const totalDonationRequests = await donationRequestsCollection.countDocuments();
+  const totalDonationRequests =
+    await donationRequestsCollection.countDocuments();
 
   const funds = await fundsCollection.find().toArray();
   const totalFunding = funds.reduce(
