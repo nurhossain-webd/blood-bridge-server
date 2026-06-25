@@ -4,8 +4,10 @@ import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
 import jwt from "jsonwebtoken";
 import { MongoClient, ServerApiVersion, ObjectId } from "mongodb";
+import Stripe from "stripe";
 
 dotenv.config();
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 const app = express();
 const port = process.env.PORT || 5001;
@@ -455,6 +457,48 @@ app.patch("/donation-requests/status/:id", verifyToken, async (req, res) => {
   );
 
   res.send(result);
+});
+
+app.post("/create-payment-intent", verifyToken, async (req, res) => {
+  const { amount } = req.body;
+
+  if (!amount || Number(amount) < 1) {
+    return res.status(400).send({ message: "Invalid amount" });
+  }
+
+  const paymentIntent = await stripe.paymentIntents.create({
+    amount: Number(amount) * 100,
+    currency: "eur",
+    payment_method_types: ["card"],
+  });
+
+  res.send({
+    clientSecret: paymentIntent.client_secret,
+  });
+});
+
+app.post("/funds", verifyToken, async (req, res) => {
+  const fund = req.body;
+
+  const newFund = {
+    name: fund.name,
+    email: fund.email,
+    amount: Number(fund.amount),
+    transactionId: fund.transactionId,
+    fundingDate: new Date(),
+  };
+
+  const result = await fundsCollection.insertOne(newFund);
+  res.send(result);
+});
+
+app.get("/funds", verifyToken, async (req, res) => {
+  const funds = await fundsCollection
+    .find()
+    .sort({ fundingDate: -1 })
+    .toArray();
+
+  res.send(funds);
 });
 
 if (process.env.NODE_ENV !== "production") {
