@@ -45,7 +45,8 @@ const createJwtToken = (user) => {
 };
 
 const verifyToken = (req, res, next) => {
-  const token = req.cookies?.access_token;
+  const token =
+    req.cookies?.access_token || req.headers.authorization?.split(" ")[1];
 
   if (!token) {
     return res.status(401).send({ message: "Unauthorized access" });
@@ -59,21 +60,6 @@ const verifyToken = (req, res, next) => {
     req.user = decoded;
     next();
   });
-};
-
-const cookieOptions = {
-  httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
-  sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-  path: "/",
-  maxAge: 7 * 24 * 60 * 60 * 1000,
-};
-
-const clearCookieOptions = {
-  httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
-  sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-  path: "/",
 };
 
 const client = new MongoClient(process.env.MONGODB_URI, {
@@ -125,17 +111,16 @@ app.post("/jwt", async (req, res) => {
     return res.status(404).send({ message: "User not found" });
   }
 
- const token =
-  req.cookies?.access_token || req.headers.authorization?.split(" ")[1];
+  const token = createJwtToken(user);
 
-  res.cookie("access_token", token, cookieOptions).send({
-  success: true,
-  token,
-});
+  res.send({
+    success: true,
+    token,
+  });
 });
 
 app.post("/logout", (req, res) => {
-  res.clearCookie("access_token", clearCookieOptions).send({ success: true });
+  res.send({ success: true });
 });
 
 app.get("/dashboard-stats", verifyToken, async (req, res) => {
