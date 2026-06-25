@@ -125,9 +125,13 @@ app.post("/jwt", async (req, res) => {
     return res.status(404).send({ message: "User not found" });
   }
 
-  const token = createJwtToken(user);
+ const token =
+  req.cookies?.access_token || req.headers.authorization?.split(" ")[1];
 
-  res.cookie("access_token", token, cookieOptions).send({ success: true });
+  res.cookie("access_token", token, cookieOptions).send({
+  success: true,
+  token,
+});
 });
 
 app.post("/logout", (req, res) => {
