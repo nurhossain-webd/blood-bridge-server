@@ -7,6 +7,7 @@ import { MongoClient, ServerApiVersion, ObjectId } from "mongodb";
 import Stripe from "stripe";
 
 dotenv.config();
+
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 const app = express();
@@ -144,7 +145,36 @@ app.get("/dashboard-stats", verifyToken, async (req, res) => {
 });
 
 app.get("/users", verifyToken, async (req, res) => {
-  const users = await usersCollection.find().sort({ createdAt: -1 }).toArray();
+  const { status, page, limit } = req.query;
+
+  const query = {};
+  if (status) query.status = status;
+
+  const hasPagination = page || limit;
+
+  if (hasPagination) {
+    const currentPage = Number(page) || 1;
+    const perPage = Number(limit) || 10;
+    const skip = (currentPage - 1) * perPage;
+
+    const total = await usersCollection.countDocuments(query);
+
+    const users = await usersCollection
+      .find(query)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(perPage)
+      .toArray();
+
+    return res.send({
+      users,
+      total,
+      currentPage,
+      totalPages: Math.ceil(total / perPage),
+    });
+  }
+
+  const users = await usersCollection.find(query).sort({ createdAt: -1 }).toArray();
   res.send(users);
 });
 
@@ -310,11 +340,35 @@ app.post("/donation-requests", verifyToken, async (req, res) => {
 });
 
 app.get("/donation-requests", async (req, res) => {
-  const { email, status, limit } = req.query;
+  const { email, status, limit, page } = req.query;
   const query = {};
 
   if (email) query.requesterEmail = email;
   if (status) query.donationStatus = status;
+
+  const hasPagination = page || (limit && page);
+
+  if (hasPagination) {
+    const currentPage = Number(page) || 1;
+    const perPage = Number(limit) || 10;
+    const skip = (currentPage - 1) * perPage;
+
+    const total = await donationRequestsCollection.countDocuments(query);
+
+    const requests = await donationRequestsCollection
+      .find(query)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(perPage)
+      .toArray();
+
+    return res.send({
+      requests,
+      total,
+      currentPage,
+      totalPages: Math.ceil(total / perPage),
+    });
+  }
 
   let cursor = donationRequestsCollection.find(query).sort({ createdAt: -1 });
 
